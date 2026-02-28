@@ -1,22 +1,132 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Fixed Point Converter</title>
-    <link rel="stylesheet" href="style.css">
+  <title>Fixed Point Tool</title>
+
+  <!-- Big.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/big.js@6.2.1/big.min.js"></script>
+
+  <style>
+    body { font-family: Arial; padding: 40px; }
+    input, select { margin: 5px; }
+    button { margin: 10px 0; }
+    pre { background: #f4f4f4; padding: 10px; }
+  </style>
 </head>
 <body>
-    <h2>Floating to Fixed-Point Converter</h2>
 
-    <label>Float Value:</label>
-    <input type="number" id="floatVal" step="any"><br><br>
+<h2>Fixed Point Calculator (Q Format)</h2>
 
-    <label>Fractional Bits (Q format):</label>
-    <input type="number" id="qVal" value="15"><br><br>
+<label>Number A:</label>
+<input type="text" id="numA" value="0.5"><br>
 
-    <button onclick="convert()">Convert</button>
+<label>Number B:</label>
+<input type="text" id="numB" value="0.25"><br>
 
-    <h3 id="result"></h3>
+<label>Format:</label>
+<select id="format">
+  <option value="15">Q15 (int16)</option>
+  <option value="31">Q31 (int32)</option>
+</select><br>
 
-    <script src="script.js"></script>
+<button onclick="convert()">Convert</button>
+<button onclick="add()">Add</button>
+<button onclick="multiply()">Multiply</button>
+
+<h3>Results</h3>
+<div id="output"></div>
+
+<h3>Generated C Code</h3>
+<pre id="cCode"></pre>
+
+<script>
+
+function getScale(q) {
+  return Big(2).pow(q);
+}
+
+function getLimits(q) {
+  if (q == 15) {
+    return { max: 32767, min: -32768 };
+  } else {
+    return { max: 2147483647, min: -2147483648 };
+  }
+}
+
+function floatToFixed(val, q) {
+  let scale = getScale(q);
+  return Big(val).times(scale).round(0);
+}
+
+function fixedToFloat(val, q) {
+  let scale = getScale(q);
+  return Big(val).div(scale);
+}
+
+function saturate(val, q) {
+  let limits = getLimits(q);
+  if (val.gt(limits.max)) return Big(limits.max);
+  if (val.lt(limits.min)) return Big(limits.min);
+  return val;
+}
+
+function convert() {
+  let q = parseInt(document.getElementById("format").value);
+  let a = document.getElementById("numA").value;
+
+  let fixed = saturate(floatToFixed(a, q), q);
+  let floatBack = fixedToFloat(fixed, q);
+
+  document.getElementById("output").innerHTML =
+    "Fixed: " + fixed.toString() +
+    "<br>Back to Float: " + floatBack.toString();
+
+  generateC(a, fixed, q);
+}
+
+function add() {
+  let q = parseInt(document.getElementById("format").value);
+  let a = floatToFixed(document.getElementById("numA").value, q);
+  let b = floatToFixed(document.getElementById("numB").value, q);
+
+  let result = saturate(a.plus(b), q);
+
+  document.getElementById("output").innerHTML =
+    "Fixed Add Result: " + result.toString() +
+    "<br>Float: " + fixedToFloat(result, q).toString();
+}
+
+function multiply() {
+  let q = parseInt(document.getElementById("format").value);
+  let a = floatToFixed(document.getElementById("numA").value, q);
+  let b = floatToFixed(document.getElementById("numB").value, q);
+
+  // (A * B) >> q
+  let result = a.times(b).div(getScale(q)).round(0);
+  result = saturate(result, q);
+
+  document.getElementById("output").innerHTML =
+    "Fixed Multiply Result: " + result.toString() +
+    "<br>Float: " + fixedToFloat(result, q).toString();
+}
+
+function generateC(floatVal, fixedVal, q) {
+  let type = (q == 15) ? "int16_t" : "int32_t";
+
+  let code =
+`// Float value
+float x = ${floatVal};
+
+// Converted to Q${q}
+${type} x_q = ${fixedVal};
+
+// Back to float
+float x_back = (float)x_q / (1 << ${q});`;
+
+  document.getElementById("cCode").innerText = code;
+}
+
+</script>
+
 </body>
 </html>
